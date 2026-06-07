@@ -25,6 +25,8 @@ interface DashboardProps {
   stats: DashboardStats;
   comms: CommunicationItem[];
   exchangeStatus: string;
+  exchangeConfig?: any;
+  auditLogs?: any[];
   setActiveTab: (tab: string) => void;
   setSelectedComm: (comm: CommunicationItem | null) => void;
 }
@@ -33,6 +35,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
   stats,
   comms,
   exchangeStatus,
+  exchangeConfig,
+  auditLogs = [],
   setActiveTab,
   setSelectedComm
 }) => {
@@ -48,8 +52,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
   // Setup data for source pie chart
   const sourceData = [
     { name: 'Emails Scanned', value: stats.sourceBreakdown.email, color: '#7c3aed' },
-    { name: 'Texts Scanned (Beta)', value: stats.sourceBreakdown.text, color: '#3b82f6' },
-    { name: 'Social Media (Beta)', value: stats.sourceBreakdown.social, color: '#10b981' }
+    { name: 'Texts Scanned', value: stats.sourceBreakdown.text, color: '#3b82f6' },
+    { name: 'Social Media Channels', value: stats.sourceBreakdown.social, color: '#10b981' }
   ];
 
   const recentAlerts = comms.filter(c => c.status === 'FLAGGED').slice(0, 4);
@@ -144,7 +148,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </div>
           <div style={{ marginTop: '16px', fontSize: '0.8rem', color: 'var(--color-text-muted)', display: 'flex', alignItems: 'center', gap: '6px' }}>
             <span>Active mon. mailboxes:</span>
-            <span style={{ fontWeight: 600, color: 'var(--color-text-main)' }}>3 / 4</span>
+            <span style={{ fontWeight: 600, color: 'var(--color-text-main)' }}>
+              {exchangeConfig?.mailboxes?.filter((m: any) => m.monitored)?.length || 0} / {exchangeConfig?.mailboxes?.length || 0}
+            </span>
           </div>
         </div>
 
@@ -296,33 +302,24 @@ export const Dashboard: React.FC<DashboardProps> = ({
         </div>
 
         {/* Sync Info / Activity */}
-        <div className="glass-card" style={{ display: 'flex', flexDirection: 'column' }}>
-          <h3 className="heading-md" style={{ marginBottom: '20px' }}>Ingestion Activity Log</h3>
+        <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', maxHeight: '400px', overflowY: 'auto' }}>
+          <h3 className="heading-md" style={{ marginBottom: '20px' }}>System Audit Logs</h3>
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            <div style={{ fontSize: '0.85rem', borderLeft: '2px solid var(--color-primary)', paddingLeft: '12px' }}>
-              <p style={{ fontWeight: 600 }}>Exchange Mailbox Sync Completed</p>
-              <p style={{ color: 'var(--color-text-muted)', fontSize: '0.75rem', marginTop: '2px' }}>
-                {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • Monitored 3 mailboxes, processed 14 emails.
-              </p>
-            </div>
-            <div style={{ fontSize: '0.85rem', borderLeft: '2px solid var(--color-secondary)', paddingLeft: '12px' }}>
-              <p style={{ fontWeight: 600 }}>API Webhook Ingest Received</p>
-              <p style={{ color: 'var(--color-text-muted)', fontSize: '0.75rem', marginTop: '2px' }}>
-                {new Date(Date.now() - 600000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • Ingested text payload from CRM System. Risk: None.
-              </p>
-            </div>
-            <div style={{ fontSize: '0.85rem', borderLeft: '2px solid var(--color-risk-high)', paddingLeft: '12px' }}>
-              <p style={{ fontWeight: 600 }}>Compliance Alert Raised</p>
-              <p style={{ color: 'var(--color-text-muted)', fontSize: '0.75rem', marginTop: '2px' }}>
-                {new Date(Date.now() - 3600000 * 2).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • EML Upload parsed. High Risk: Off-Label promotion.
-              </p>
-            </div>
-            <div style={{ fontSize: '0.85rem', borderLeft: '2px solid var(--color-border)', paddingLeft: '12px' }}>
-              <p style={{ fontWeight: 600, color: 'var(--color-text-muted)' }}>Text Scanning Service (Beta)</p>
-              <p style={{ color: 'var(--color-text-muted)', fontSize: '0.75rem', marginTop: '2px' }}>
-                Service online, waiting for configuration credentials.
-              </p>
-            </div>
+            {auditLogs && auditLogs.length > 0 ? (
+              auditLogs.slice(0, 5).map((log: any) => (
+                <div key={log.id} style={{ fontSize: '0.85rem', borderLeft: `2px solid ${log.action.includes('STATUS') ? 'var(--color-primary)' : 'var(--color-secondary)'}`, paddingLeft: '12px' }}>
+                  <p style={{ fontWeight: 600 }}>{log.action.replace(/_/g, ' ')}</p>
+                  <p style={{ color: 'var(--color-text-main)', fontSize: '0.8rem', marginTop: '2px' }}>{log.details}</p>
+                  <p style={{ color: 'var(--color-text-muted)', fontSize: '0.7rem', marginTop: '2px' }}>
+                    {new Date(log.timestamp).toLocaleString()} • User: {log.user}
+                  </p>
+                </div>
+              ))
+            ) : (
+              <div style={{ color: 'var(--color-text-muted)', textAlign: 'center', padding: '20px' }}>
+                No recent system logs.
+              </div>
+            )}
           </div>
         </div>
 

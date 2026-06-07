@@ -169,7 +169,13 @@ const addDoc = async (collection, data) => {
 const upload = multer({ storage: multer.memoryStorage() });
 
 // --- AI Analysis Core ---
+let isGeminiAvailable = true;
+
 async function analyzeContentWithGemini(subject, body, policies) {
+  if (!isGeminiAvailable) {
+    return runHeuristicFallback(body, policies);
+  }
+
   try {
     const enabledPolicies = policies.filter(p => p.enabled);
     const policyPrompt = enabledPolicies.map(p => {
@@ -180,6 +186,7 @@ async function analyzeContentWithGemini(subject, body, policies) {
 Analyze the following communication:
 Subject: "${subject || 'None'}"
 Body: "${body}"
+
 
 Evaluate the body against these specific compliance risk categories:
 ${policyPrompt}
@@ -226,6 +233,11 @@ Return a strictly formatted JSON object with the following fields:
     return parsedResult;
   } catch (err) {
     console.error('Gemini AI Analysis Error, running heuristic fallback:', err.message);
+    const errMsg = err.message || '';
+    if (errMsg.includes('key') || errMsg.includes('API_KEY') || errMsg.includes('PERMISSION_DENIED') || errMsg.includes('leaked') || errMsg.includes('403')) {
+      isGeminiAvailable = false;
+      console.warn('Gemini API key is invalid or leaked. Switching to local heuristic scanner permanently for this session.');
+    }
     // Heuristic Fallback
     return runHeuristicFallback(body, policies);
   }
@@ -638,6 +650,40 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 
+// Seeding Firestore if empty
+async function seedFirestoreIfNeeded() {
+  if (!isFirestoreAvailable) return;
+  try {
+    const policiesSnap = await db.collection('policies').get();
+    if (policiesSnap.empty) {
+      console.log('Seeding default policies to Firestore...');
+      for (const policy of memoryDb.policies) {
+        await db.collection('policies').doc(policy.id).set(policy);
+      }
+      console.log('Seeding default policies completed.');
+    }
+    
+    const exchangeConfigDoc = await db.collection('appConfig').doc('exchangeConfig').get();
+    if (!exchangeConfigDoc.exists) {
+      console.log('Seeding default Exchange config to Firestore...');
+      await db.collection('appConfig').doc('exchangeConfig').set(memoryDb.exchangeConfig);
+    }
+
+    const apiKeysSnap = await db.collection('apiKeys').get();
+    if (apiKeysSnap.empty) {
+      console.log('Seeding default API keys to Firestore...');
+      for (const key of memoryDb.apiKeys) {
+        await db.collection('apiKeys').doc(key.keyId).set(key);
+      }
+    }
+  } catch (err) {
+    console.error('Error seeding Firestore:', err.message);
+  }
+}
+
 app.listen(port, () => {
   console.log(`Comms Monitoring App Server running on port ${port}`);
+  if (isFirestoreAvailable) {
+    seedFirestoreIfNeeded();
+  }
 });

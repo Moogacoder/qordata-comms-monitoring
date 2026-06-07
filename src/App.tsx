@@ -46,6 +46,7 @@ function App() {
   const [policies, setPolicies] = useState<PolicyRule[]>([]);
   const [stats, setStats] = useState<DashboardStats>(initialStats);
   const [selectedComm, setSelectedComm] = useState<CommunicationItem | null>(null);
+  const [auditLogs, setAuditLogs] = useState<any[]>([]);
   
   const [isUploading, setIsUploading] = useState(false);
 
@@ -85,6 +86,13 @@ function App() {
       if (statsRes.ok) {
         const statsData = await statsRes.json();
         setStats(statsData);
+      }
+
+      // 6. Fetch Audit Logs
+      const logsRes = await fetch('/api/audit-logs');
+      if (logsRes.ok) {
+        const logsData = await logsRes.json();
+        setAuditLogs(logsData);
       }
     } catch (err) {
       console.warn('API connection failed. Running in static demo mode.', err);
@@ -180,6 +188,9 @@ function App() {
     setExchangeConfig(mockExchange);
     setApiKeys(mockKeys);
     setPolicies(mockPolicies);
+    setAuditLogs([
+      { id: 'audit-1', timestamp: new Date(Date.now() - 3600000 * 2).toISOString(), user: 'compliance.officer@qordata.com', action: 'STATUS_FLAGGED', details: 'Offline Mock Ingestion initialized.' }
+    ]);
     recalculateStats(mockComms);
   };
 
@@ -237,6 +248,9 @@ function App() {
         // Reload stats
         const statsRes = await fetch('/api/stats');
         if (statsRes.ok) setStats(await statsRes.json());
+        // Reload audit logs
+        const logsRes = await fetch('/api/audit-logs');
+        if (logsRes.ok) setAuditLogs(await logsRes.json());
       }
     } catch (err) {
       // Offline fallback
@@ -363,6 +377,9 @@ function App() {
         } else {
           recalculateStats([...uploadedComms, ...comms]);
         }
+        // Reload audit logs
+        const logsRes = await fetch('/api/audit-logs');
+        if (logsRes.ok) setAuditLogs(await logsRes.json());
       } catch (e) {
         recalculateStats([...uploadedComms, ...comms]);
       }
@@ -548,6 +565,8 @@ function App() {
             stats={stats} 
             comms={comms} 
             exchangeStatus={exchangeConfig?.status || 'CONNECTED'} 
+            exchangeConfig={exchangeConfig}
+            auditLogs={auditLogs}
             setActiveTab={setActiveTab}
             setSelectedComm={setSelectedComm}
           />
