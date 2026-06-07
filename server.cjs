@@ -414,6 +414,59 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
     const file = req.file;
     if (!file) return res.status(400).json({ error: 'No file uploaded' });
 
+    const policies = await getDocs('policies');
+
+    if (file.originalname.toLowerCase().endsWith('.zip')) {
+      const AdmZip = require('adm-zip');
+      const zip = new AdmZip(file.buffer);
+      const zipEntries = zip.getEntries();
+      const processedComms = [];
+
+      for (const entry of zipEntries) {
+        if (entry.isDirectory) continue;
+        const entryName = entry.entryName;
+        if (entryName.includes('__MACOSX') || path.basename(entryName).startsWith('.')) continue;
+        if (!entryName.toLowerCase().endsWith('.eml') && !entryName.toLowerCase().endsWith('.txt')) continue;
+
+        let emailDetails = {
+          sender: 'unknown@example.com',
+          recipient: 'unknown@example.com',
+          subject: path.basename(entryName),
+          body: ''
+        };
+
+        const entryBuffer = entry.getData();
+        if (entryName.toLowerCase().endsWith('.eml')) {
+          const parsed = await simpleParser(entryBuffer);
+          emailDetails.sender = parsed.from && parsed.from.text ? parsed.from.text : 'unknown@example.com';
+          emailDetails.recipient = parsed.to && parsed.to.text ? parsed.to.text : 'unknown@example.com';
+          emailDetails.subject = parsed.subject || path.basename(entryName);
+          emailDetails.body = parsed.text || parsed.html || '';
+        } else {
+          emailDetails.body = entryBuffer.toString('utf-8');
+        }
+
+        const aiResult = await analyzeContentWithGemini(emailDetails.subject, emailDetails.body, policies);
+
+        const newComm = {
+          sender: emailDetails.sender,
+          recipient: emailDetails.recipient,
+          timestamp: new Date().toISOString(),
+          source: 'EMAIL',
+          subject: emailDetails.subject,
+          body: emailDetails.body,
+          originalFilename: path.basename(entryName),
+          status: aiResult.riskCategory !== 'NONE' ? 'FLAGGED' : 'DISMISSED',
+          ...aiResult
+        };
+
+        await addDoc('communications', newComm);
+        processedComms.push(newComm);
+      }
+
+      return res.json({ success: true, comms: processedComms });
+    }
+
     let emailDetails = {
       sender: 'unknown@example.com',
       recipient: 'unknown@example.com',
@@ -421,7 +474,7 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
       body: ''
     };
 
-    if (file.originalname.endsWith('.eml')) {
+    if (file.originalname.toLowerCase().endsWith('.eml')) {
       // Parse EML
       const parsed = await simpleParser(file.buffer);
       emailDetails.sender = parsed.from && parsed.from.text ? parsed.from.text : 'unknown@example.com';
@@ -434,7 +487,6 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
     }
 
     // Call AI scanner
-    const policies = await getDocs('policies');
     const aiResult = await analyzeContentWithGemini(emailDetails.subject, emailDetails.body, policies);
 
     const newComm = {
@@ -452,8 +504,8 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
     const id = await addDoc('communications', newComm);
     res.json({ success: true, id, comm: newComm });
   } catch (err) {
-    console.error('Upload Parsing Error:', err);
-    res.status(500).json({ error: 'Failed to process email file.' });
+    console.error('Upload Processing Error:', err);
+    res.status(500).json({ error: 'Failed to process upload file.' });
   }
 });
 

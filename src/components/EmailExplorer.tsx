@@ -16,7 +16,7 @@ interface EmailExplorerProps {
   selectedComm: CommunicationItem | null;
   setSelectedComm: (comm: CommunicationItem | null) => void;
   onUpdateCommStatus: (id: string, status: CommStatus, explanation?: string) => Promise<void>;
-  onUploadEmail: (file: File) => Promise<void>;
+  onUploadEmails: (files: FileList) => Promise<void>;
   isUploading: boolean;
   currentUserRole: string;
 }
@@ -26,7 +26,7 @@ export const EmailExplorer: React.FC<EmailExplorerProps> = ({
   selectedComm,
   setSelectedComm,
   onUpdateCommStatus,
-  onUploadEmail,
+  onUploadEmails,
   isUploading,
   currentUserRole
 }) => {
@@ -39,9 +39,9 @@ export const EmailExplorer: React.FC<EmailExplorerProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      onUploadEmail(file);
+    const files = e.target.files;
+    if (files && files.length > 0) {
+      onUploadEmails(files);
     }
   };
 
@@ -186,7 +186,8 @@ export const EmailExplorer: React.FC<EmailExplorerProps> = ({
             type="file" 
             ref={fileInputRef} 
             onChange={handleFileChange} 
-            accept=".eml,.msg,.txt" 
+            accept=".eml,.msg,.txt,.zip" 
+            multiple
             style={{ display: 'none' }} 
           />
           <button 
@@ -201,7 +202,7 @@ export const EmailExplorer: React.FC<EmailExplorerProps> = ({
             ) : (
               <>
                 <FileText size={18} />
-                <span>Upload .EML / .TXT File</span>
+                <span>Upload .EML / .TXT / .ZIP File(s)</span>
               </>
             )}
           </button>

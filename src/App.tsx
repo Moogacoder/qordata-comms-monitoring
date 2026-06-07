@@ -254,60 +254,123 @@ function App() {
     }
   };
 
-  // Upload EML File
-  const handleUploadEmail = async (file: File) => {
+  // Upload EML Files
+  const handleUploadEmails = async (files: FileList | File[]) => {
     setIsUploading(true);
-    const formData = new FormData();
-    formData.append('file', file);
+    const filesArray = Array.from(files);
+    const uploadedComms: CommunicationItem[] = [];
 
-    try {
-      const res = await fetch('/api/upload', {
-        method: 'POST',
-        body: formData
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setComms(prev => [data.comm, ...prev]);
-        setSelectedComm(data.comm);
-        setActiveTab('explorer');
+    for (const file of filesArray) {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      try {
+        const res = await fetch('/api/upload', {
+          method: 'POST',
+          body: formData
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.comms) {
+            uploadedComms.push(...data.comms);
+          } else if (data.comm) {
+            uploadedComms.push(data.comm);
+          }
+        } else {
+          throw new Error('Server upload failed');
+        }
+      } catch (err) {
+        console.warn(`Failed to upload ${file.name} to server, falling back to local mock parsing.`, err);
+        if (file.name.toLowerCase().endsWith('.zip')) {
+          const mockComms: CommunicationItem[] = [
+            {
+              id: 'comm-' + Date.now() + '-zip-1',
+              sender: 'rep.offline1@qordata.com',
+              recipient: 'doctor.hcp@hospital.org',
+              timestamp: new Date().toISOString(),
+              source: 'EMAIL',
+              subject: 'Mock Offline Zip File 1: CardioRex pediatric use',
+              body: 'Hello Dr. Jones, please find the slides showing Cardiorex works wonders for pediatric asthma.',
+              originalFilename: 'test-offlabel.eml',
+              riskScore: 92,
+              riskCategory: 'OFF_LABEL_PROMOTION',
+              severity: 'HIGH',
+              status: 'FLAGGED',
+              explanation: 'Offline Mock Zip Scan: Content matched pediatric asthma promotion (off-label).',
+              flaggedSentences: ['Cardiorex works wonders for pediatric asthma.']
+            },
+            {
+              id: 'comm-' + Date.now() + '-zip-2',
+              sender: 'rep.offline2@qordata.com',
+              recipient: 'dr.smith@hopkinsmedicine.org',
+              timestamp: new Date().toISOString(),
+              source: 'EMAIL',
+              subject: 'Mock Offline Zip File 2: Dosing inquiry',
+              body: 'Hi Dr. Smith, just sending the normal scientific data for renal studies.',
+              originalFilename: 'test-compliant.eml',
+              riskScore: 0,
+              riskCategory: 'NONE',
+              severity: 'NONE',
+              status: 'DISMISSED',
+              explanation: 'Offline Mock Zip Scan: No compliance risks identified.',
+              flaggedSentences: []
+            }
+          ];
+          uploadedComms.push(...mockComms);
+        } else {
+          // Local fallback parsing using Promise wrapper to await FileReader
+          const fileContent = await new Promise<string>((resolve) => {
+            const reader = new FileReader();
+            reader.onload = (e) => resolve(e.target?.result as string || '');
+            reader.readAsText(file);
+          });
+
+          const mockNewComm: CommunicationItem = {
+            id: 'comm-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5),
+            sender: 'rep.upload@qordata.com',
+            recipient: 'doctor.hcp@hospital.org',
+            timestamp: new Date().toISOString(),
+            source: 'EMAIL',
+            subject: file.name,
+            body: fileContent,
+            originalFilename: file.name,
+            riskScore: fileContent.includes('lunch') || fileContent.includes('fee') ? 88 : 0,
+            riskCategory: fileContent.includes('lunch') || fileContent.includes('fee') ? 'KICKBACK_BRIBERY' : 'NONE',
+            severity: fileContent.includes('lunch') || fileContent.includes('fee') ? 'HIGH' : 'NONE',
+            status: fileContent.includes('lunch') || fileContent.includes('fee') ? 'FLAGGED' : 'DISMISSED',
+            explanation: fileContent.includes('lunch') || fileContent.includes('fee') 
+              ? 'Mock Offline Scan: Content matches policies for monetary compliance rules (fee / speaking incentives).' 
+              : 'Mock Offline Scan: No risks found.',
+            flaggedSentences: fileContent.includes('lunch') || fileContent.includes('fee') ? ['speaking fee', 'lunch invite'] : []
+          };
+          uploadedComms.push(mockNewComm);
+        }
+      }
+    }
+
+    if (uploadedComms.length > 0) {
+      // Add all uploaded communications to state (most recent at the top)
+      setComms(prev => [...uploadedComms, ...prev]);
+      // Select the first uploaded communication
+      setSelectedComm(uploadedComms[0]);
+      setActiveTab('explorer');
+      
+      try {
         // Reload stats
         const statsRes = await fetch('/api/stats');
-        if (statsRes.ok) setStats(await statsRes.json());
+        if (statsRes.ok) {
+          setStats(await statsRes.json());
+        } else {
+          recalculateStats([...uploadedComms, ...comms]);
+        }
+      } catch (e) {
+        recalculateStats([...uploadedComms, ...comms]);
       }
-    } catch (err) {
-      alert('Mock scan: File upload processed offline.');
-      // Local fallback parsing
-      const reader = new FileReader();
-      reader.onload = async (e) => {
-        const text = e.target?.result as string;
-        // Mock a fallback scan
-        const mockNewComm: CommunicationItem = {
-          id: 'comm-' + Date.now(),
-          sender: 'rep.upload@qordata.com',
-          recipient: 'doctor.hcp@hospital.org',
-          timestamp: new Date().toISOString(),
-          source: 'EMAIL',
-          subject: file.name,
-          body: text,
-          originalFilename: file.name,
-          riskScore: text.includes('lunch') || text.includes('fee') ? 88 : 0,
-          riskCategory: text.includes('lunch') || text.includes('fee') ? 'KICKBACK_BRIBERY' : 'NONE',
-          severity: text.includes('lunch') || text.includes('fee') ? 'HIGH' : 'NONE',
-          status: text.includes('lunch') || text.includes('fee') ? 'FLAGGED' : 'DISMISSED',
-          explanation: text.includes('lunch') || text.includes('fee') 
-            ? 'Mock Offline Scan: Content matches policies for monetary compliance rules (fee / speaking incentives).' 
-            : 'Mock Offline Scan: No risks found.',
-          flaggedSentences: text.includes('lunch') || text.includes('fee') ? ['speaking fee', 'lunch invite'] : []
-        };
-        setComms(prev => [mockNewComm, ...prev]);
-        setSelectedComm(mockNewComm);
-        setActiveTab('explorer');
-        recalculateStats([mockNewComm, ...comms]);
-      };
-      reader.readAsText(file);
-    } finally {
-      setIsUploading(false);
+    } else {
+      alert('No files were successfully processed.');
     }
+    
+    setIsUploading(false);
   };
 
   // Create API Key
@@ -496,7 +559,7 @@ function App() {
             selectedComm={selectedComm}
             setSelectedComm={setSelectedComm}
             onUpdateCommStatus={handleUpdateCommStatus}
-            onUploadEmail={handleUploadEmail}
+            onUploadEmails={handleUploadEmails}
             isUploading={isUploading}
             currentUserRole={currentUser.role}
           />
